@@ -1,0 +1,31 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# Environment variables
+.env
+.env.*
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs
+logs/
+*.log
+
+# Coverage
+coverage/
+
+# Docker
+*.tar
+
+# GitHub Actions artifacts
+.artifacts/
+
+# Notes storage (if you don't want persistent local data)
+notes.json
+
