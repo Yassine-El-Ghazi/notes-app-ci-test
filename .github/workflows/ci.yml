@@ -1,0 +1,170 @@
+
+name: Notes App CI/CD
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  APP_NAME: "notes-app"
+  APP_VERSION: "1.0.0"
+  NODE_ENV: "production"
+
+jobs:
+  ############################################
+  # STAGE 1: BUILD
+  ############################################
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: |
+          echo "Installing dependencies..."
+          npm install
+          echo "Checking syntax of server files..."
+          node -c app.js
+          node -c tasks.js
+          echo "Build completed successfully!"
+
+      - name: Cache node_modules
+        uses: actions/cache@v3
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+  ############################################
+  # STAGE 2: TEST
+  ############################################
+  test:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run tests
+        run: |
+          echo "Running unit tests..."
+          npm test
+          echo "All tests passed!"
+
+  ############################################
+  # STAGE 3: SECURITY
+  ############################################
+  security-secrets-scan:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Scan code for secrets
+        uses: zricethezav/gitleaks-action@v1
+        with:
+          args: detect --source=. --verbose --no-git
+
+  security-dependencies-scan:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Audit dependencies
+        run: |
+          echo "Checking dependencies for vulnerabilities..."
+          npm audit --audit-level=high
+          echo "No critical vulnerabilities found!"
+
+  ############################################
+  # STAGE 4: PACKAGE
+  ############################################
+  package-docker:
+    runs-on: ubuntu-latest
+    needs: [build, test]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build Docker image
+        run: |
+          echo "Building Docker image..."
+          docker build -t $APP_NAME:$APP_VERSION .
+          docker build -t $APP_NAME:latest .
+          docker images
+
+      - name: Push Docker image
+        run: |
+          docker tag $APP_NAME:$APP_VERSION ${{ secrets.DOCKER_USERNAME }}/$APP_NAME:$APP_VERSION
+          docker tag $APP_NAME:latest ${{ secrets.DOCKER_USERNAME }}/$APP_NAME:latest
+          docker push ${{ secrets.DOCKER_USERNAME }}/$APP_NAME:$APP_VERSION
+          docker push ${{ secrets.DOCKER_USERNAME }}/$APP_NAME:latest
+
+  ############################################
+  # STAGE 5: DEPLOY
+  ############################################
+  deploy-staging:
+    runs-on: ubuntu-latest
+    needs: package-docker
+    steps:
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Deploy to staging
+        run: |
+          echo "Deploying to staging..."
+          docker stop notes-app-staging || true
+          docker rm notes-app-staging || true
+          docker run -d --name notes-app-staging -p 3000:3000 ${{ secrets.DOCKER_USERNAME }}/$APP_NAME:$APP_VERSION
+          echo "Notes app deployed on staging!"
+
+  deploy-production:
+    runs-on: ubuntu-latest
+    needs: package-docker
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Deploy to production
+        run: |
+          echo "Deploying to PRODUCTION..."
+          docker stop notes-app-prod || true
+          docker rm notes-app-prod || true
+          docker run -d --name notes-app-prod -p 8080:3000 ${{ secrets.DOCKER_USERNAME }}/$APP_NAME:$APP_VERSION
+          echo "Notes app deployed to PRODUCTION!"
