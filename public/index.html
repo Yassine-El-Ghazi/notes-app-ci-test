@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Notes App</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2em; }
+    #notes { margin-top: 2em; }
+    .note { border: 1px solid #ccc; padding: 1em; margin-bottom: 1em; }
+    .note-title { font-weight: bold; }
+    button { margin-left: 0.5em; }
+  </style>
+</head>
+<body>
+  <h1>Notes</h1>
+  <form id="noteForm">
+    <input type="hidden" id="noteId">
+    <input type="text" id="title" placeholder="Title" required>
+    <input type="text" id="content" placeholder="Content" required>
+    <button type="submit">Save</button>
+  </form>
+  <div id="notes"></div>
+  <script>
+    async function fetchNotes() {
+      const res = await fetch('/api/notes');
+      const notes = await res.json();
+      const notesDiv = document.getElementById('notes');
+      notesDiv.innerHTML = '';
+      notes.forEach(note => {
+        const div = document.createElement('div');
+        div.className = 'note';
+        div.innerHTML = `<span class="note-title">${note.title}</span>: ${note.content}
+          <button onclick="editNote('${note.id}', '${note.title}', '${note.content}')">Edit</button>
+          <button onclick="deleteNote('${note.id}')">Delete</button>`;
+        notesDiv.appendChild(div);
+      });
+    }
+    document.getElementById('noteForm').onsubmit = async function(e) {
+      e.preventDefault();
+      const id = document.getElementById('noteId').value;
+      const title = document.getElementById('title').value;
+      const content = document.getElementById('content').value;
+      if (id) {
+        await fetch('/api/notes/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title, content }) });
+      } else {
+        await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title, content }) });
+      }
+      document.getElementById('noteId').value = '';
+      document.getElementById('title').value = '';
+      document.getElementById('content').value = '';
+      fetchNotes();
+    };
+    window.editNote = function(id, title, content) {
+      document.getElementById('noteId').value = id;
+      document.getElementById('title').value = title;
+      document.getElementById('content').value = content;
+    };
+    window.deleteNote = async function(id) {
+      await fetch('/api/notes/' + id, { method: 'DELETE' });
+      fetchNotes();
+    };
+    fetchNotes();
+  </script>
+</body>
+</html>
+
