@@ -77,13 +77,14 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
       - name: Run Gitleaks (strict mode)
         run: |
          docker run --rm -v ${{ github.workspace }}:/repo \
          zricethezav/gitleaks:latest detect \
          --source=/repo \
-         --no-git \
          --redact \
          --verbose \
          --exit-code 1
