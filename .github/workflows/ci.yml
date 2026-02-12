@@ -81,7 +81,7 @@ jobs:
       - name: Run Gitleaks (strict mode)
         run: |
          docker run --rm -v ${{ github.workspace }}:/repo \
-         gitleaks/gitleaks:latest detect \
+         zricethezav/gitleaks:latest detect \
          --source=/repo \
          --redact \
          --verbose \
