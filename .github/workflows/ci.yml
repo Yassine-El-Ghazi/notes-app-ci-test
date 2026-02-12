@@ -78,10 +78,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Scan code for secrets
-        uses: zricethezav/gitleaks-action@v1
-        with:
-          args: detect --source=. --verbose --no-git
+      - name: Run Gitleaks (strict mode)
+        run: |
+         docker run --rm -v ${{ github.workspace }}:/repo \
+         gitleaks/gitleaks:latest detect \
+         --source=/repo \
+         --redact \
+         --verbose \
+         --exit-code 1
 
   security-dependencies-scan:
     runs-on: ubuntu-latest
