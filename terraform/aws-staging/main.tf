@@ -92,7 +92,7 @@ data "aws_ami" "amazon_linux_2" {
 ############################
 resource "aws_instance" "staging" {
   ami                         = data.aws_ami.amazon_linux_2.id
-  instance_type               = var.instance_type
+  instance_type               = "t3.micro"  # Free Tier eligible
   key_name                    = aws_key_pair.staging.key_name
   vpc_security_group_ids      = [aws_security_group.staging_sg.id]
   subnet_id                   = tolist(data.aws_subnets.default.ids)[0]
