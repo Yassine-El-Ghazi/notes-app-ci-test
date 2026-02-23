@@ -1,4 +1,3 @@
-
 name: Notes App CI/CD
 
 on:
@@ -10,12 +9,12 @@ on:
 env:
   APP_NAME: "notes-app"
   APP_VERSION: "1.0.0"
-  NODE_ENV: ""
 
 jobs:
-  ############################################
-  # STAGE 1: BUILD
-  ############################################
+
+############################################
+# STAGE 1: BUILD
+############################################
   build:
     runs-on: ubuntu-latest
     steps:
@@ -28,149 +27,116 @@ jobs:
           node-version: '18'
 
       - name: Install dependencies
+        run: npm install
+
+      - name: Check syntax
         run: |
-          echo "Installing dependencies..."
-          npm install
-          echo "Checking syntax of server files..."
           node -c app.js
           node -c tasks.js
-          echo "Build completed successfully!"
 
-      - name: Cache node_modules
-        uses: actions/cache@v3
-        with:
-          path: node_modules
-          key: ${{ runner.os }}-node-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
-
-  ############################################
-  # STAGE 2: TEST
-  ############################################
+############################################
+# STAGE 2: TEST
+############################################
   test:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
+      - uses: actions/setup-node@v3
         with:
           node-version: '18'
 
-      - name: Install dependencies
-        run: npm install
+      - run: npm install
 
       - name: Run tests
-        run: |
-          echo "Running unit tests..."
-          npm test
-          echo "All tests passed!"
+        run: npm test
 
-  ############################################
-  # STAGE 3: SECURITY
-  ############################################
+############################################
+# STAGE 3: SECURITY
+############################################
   security-secrets-scan:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
         with:
           fetch-depth: 0
 
-      - name: Run Gitleaks (strict mode)
+      - name: Run Gitleaks
         run: |
-         docker run --rm -v ${{ github.workspace }}:/repo \
-         zricethezav/gitleaks:latest detect \
-         --source=/repo \
-         --redact \
-         --verbose \
-         --exit-code 1
+          docker run --rm -v ${{ github.workspace }}:/repo \
+          zricethezav/gitleaks:latest detect \
+          --source=/repo \
+          --redact \
+          --exit-code 1
 
   security-dependencies-scan:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
+      - run: npm install
+      - run: npm audit --audit-level=high
 
-      - name: Install dependencies
-        run: npm install
-
-      - name: Audit dependencies
-        run: |
-          echo "Checking dependencies for vulnerabilities..."
-          npm audit --audit-level=high
-          echo "No critical vulnerabilities found!"
-
-  ############################################
-  # STAGE 4: PACKAGE
-  ############################################
+############################################
+# STAGE 4: PACKAGE (Docker)
+############################################
   package-docker:
     runs-on: ubuntu-latest
     needs: [build, test]
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-      - name: Log in to Docker Hub
+      - name: Login to Docker Hub
         uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Build Docker image
+      - name: Build image
         run: |
-          echo "Building Docker image..."
           docker build -t $APP_NAME:$APP_VERSION .
-          docker build -t $APP_NAME:latest .
-          docker images
-
-      - name: Push Docker image
-        run: |
           docker tag $APP_NAME:$APP_VERSION ${{ secrets.DOCKER_USERNAME }}/$APP_NAME:$APP_VERSION
-          docker tag $APP_NAME:latest ${{ secrets.DOCKER_USERNAME }}/$APP_NAME:latest
+          docker tag $APP_NAME:$APP_VERSION ${{ secrets.DOCKER_USERNAME }}/$APP_NAME:latest
+
+      - name: Push image
+        run: |
           docker push ${{ secrets.DOCKER_USERNAME }}/$APP_NAME:$APP_VERSION
           docker push ${{ secrets.DOCKER_USERNAME }}/$APP_NAME:latest
 
-  ############################################
-  # STAGE 5: DEPLOY
-  ############################################
-  deploy-staging:
-    runs-on: ubuntu-latest
-    needs: package-docker
-    steps:
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Deploy to staging
-        run: |
-          echo "Deploying to staging..."
-          docker stop notes-app-staging || true
-          docker rm notes-app-staging || true
-          docker run -d --name notes-app-staging -p 3000:3000 ${{ secrets.DOCKER_USERNAME }}/$APP_NAME:$APP_VERSION
-          echo "Notes app deployed on staging!"
-
-  deploy-production:
+############################################
+# STAGE 5: DEPLOY WITH TERRAFORM
+############################################
+  deploy-infrastructure:
     runs-on: ubuntu-latest
     needs: package-docker
     if: github.ref == 'refs/heads/main'
-    steps:
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Deploy to production
+    defaults:
+      run:
+        working-directory: terraform/aws-staging
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Apply
         run: |
-          echo "Deploying to PRODUCTION..."
-          docker stop notes-app-prod || true
-          docker rm notes-app-prod || true
-          docker run -d --name notes-app-prod -p 8080:3000 ${{ secrets.DOCKER_USERNAME }}/$APP_NAME:$APP_VERSION
-          echo "Notes app deployed to PRODUCTION!"
+          terraform apply -auto-approve \
+            -var="docker_image=${{ secrets.DOCKER_USERNAME }}/notes-app" \
+            -var="docker_tag=${{ env.APP_VERSION }}" \
+            -var="registry_user=${{ secrets.DOCKER_USERNAME }}" \
+            -var="registry_password=${{ secrets.DOCKER_PASSWORD }}"
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Show Public IP
+        run: terraform output staging_public_ip
