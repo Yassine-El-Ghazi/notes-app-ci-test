@@ -1,0 +1,10 @@
+aws_region    = "eu-west-1"
+instance_type = "t2.micro"
+
+docker_image = "awdyane/notes-app"
+docker_tag   = "latest"
+
+# DO NOT COMMIT REAL CREDENTIALS
+# Use GitHub Secrets or TF_VAR_ environment variables
+# registry_user     = "your_docker_username"
+# registry_password = "your_docker_token"
