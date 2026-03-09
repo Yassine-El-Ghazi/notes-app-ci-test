@@ -1,22 +1,27 @@
 variable "aws_region" {
-  type    = string
-  default = "eu-west-1"
+  description = "AWS region"
+  type        = string
+  default     = "eu-west-1"
 }
 
 variable "cluster_name" {
-  type    = string
-  default = "notes-app-production"
+  description = "EKS cluster name"
+  type        = string
+  default     = "notes-app-production"
 }
 
-variable "app_name" {
-  type    = string
-  default = "notes-app"
+variable "namespace" {
+  description = "Kubernetes namespace"
+  type        = string
+  default     = "notes-app"
 }
 
 variable "docker_image" {
-  type = string
+  description = "Docker image name"
+  type        = string
 }
 
 variable "docker_tag" {
-  type = string
+  description = "Docker image tag"
+  type        = string
 }

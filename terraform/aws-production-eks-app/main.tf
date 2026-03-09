@@ -6,7 +6,6 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
-
     kubernetes = {
       source  = "hashicorp/kubernetes"
       version = "~> 2.30"
@@ -32,18 +31,12 @@ provider "kubernetes" {
   token                  = data.aws_eks_cluster_auth.this.token
 }
 
-resource "kubernetes_namespace" "app" {
-  metadata {
-    name = "notes-app"
-  }
-}
-
 resource "kubernetes_deployment" "app" {
   metadata {
-    name      = var.app_name
-    namespace = kubernetes_namespace.app.metadata[0].name
+    name      = "notes-app"
+    namespace = var.namespace
     labels = {
-      app = var.app_name
+      app = "notes-app"
     }
   }
 
@@ -52,24 +45,48 @@ resource "kubernetes_deployment" "app" {
 
     selector {
       match_labels = {
-        app = var.app_name
+        app = "notes-app"
       }
     }
 
     template {
       metadata {
         labels = {
-          app = var.app_name
+          app = "notes-app"
         }
       }
 
       spec {
         container {
-          name  = var.app_name
+          name  = "notes-app"
           image = "${var.docker_image}:${var.docker_tag}"
 
           port {
             container_port = 3000
+          }
+
+          readiness_probe {
+            http_get {
+              path = "/"
+              port = 3000
+            }
+            initial_delay_seconds = 5
+            period_seconds        = 5
+            timeout_seconds       = 1
+            failure_threshold     = 3
+            success_threshold     = 1
+          }
+
+          liveness_probe {
+            http_get {
+              path = "/"
+              port = 3000
+            }
+            initial_delay_seconds = 15
+            period_seconds        = 10
+            timeout_seconds       = 1
+            failure_threshold     = 3
+            success_threshold     = 1
           }
 
           resources {
@@ -82,24 +99,6 @@ resource "kubernetes_deployment" "app" {
               memory = "256Mi"
             }
           }
-
-          readiness_probe {
-            http_get {
-              path = "/"
-              port = 3000
-            }
-            initial_delay_seconds = 5
-            period_seconds        = 5
-          }
-
-          liveness_probe {
-            http_get {
-              path = "/"
-              port = 3000
-            }
-            initial_delay_seconds = 15
-            period_seconds        = 10
-          }
         }
       }
     }
@@ -108,20 +107,29 @@ resource "kubernetes_deployment" "app" {
 
 resource "kubernetes_service" "app" {
   metadata {
-    name      = "${var.app_name}-service"
-    namespace = kubernetes_namespace.app.metadata[0].name
+    name      = "notes-app-service"
+    namespace = var.namespace
   }
 
   spec {
     selector = {
-      app = var.app_name
+      app = "notes-app"
     }
 
     port {
       port        = 80
       target_port = 3000
+      protocol    = "TCP"
     }
 
     type = "LoadBalancer"
   }
+}
+
+output "namespace" {
+  value = var.namespace
+}
+
+output "service_name" {
+  value = kubernetes_service.app.metadata[0].name
 }
