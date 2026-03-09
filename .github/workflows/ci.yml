@@ -118,43 +118,114 @@ jobs:
   ############################################
   # STAGE 5: STAGING (EC2 + Terraform)
   ############################################
-  deploy-staging:
-    runs-on: ubuntu-latest
-    needs: package-docker
-    if: github.ref == 'refs/heads/main'
+deploy-staging:
+  runs-on: ubuntu-latest
+  needs: package-docker
+  if: github.ref == 'refs/heads/main'
 
-    defaults:
-      run:
-        working-directory: terraform/aws-staging
+  defaults:
+    run:
+      working-directory: terraform/aws-staging
 
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
+  steps:
+    - name: Checkout repo
+      uses: actions/checkout@v3
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
 
-      - name: Terraform Init
-        run: terraform init
+    - name: Cleanup old staging EC2 instances
+      run: |
+        INSTANCE_IDS=$(aws ec2 describe-instances \
+          --region "$AWS_REGION" \
+          --filters "Name=tag:Environment,Values=staging" \
+                    "Name=tag:Project,Values=notes-app" \
+                    "Name=instance-state-name,Values=pending,running,stopping,stopped" \
+          --query 'Reservations[*].Instances[*].InstanceId' \
+          --output text)
 
-      - name: Terraform Apply
-        run: |
-          terraform apply -auto-approve \
-            -var="docker_image=${{ secrets.DOCKER_USERNAME }}/notes-app" \
-            -var="docker_tag=${{ env.APP_VERSION }}" \
-            -var="registry_user=${{ secrets.DOCKER_USERNAME }}" \
-            -var="registry_password=${{ secrets.DOCKER_PASSWORD }}"
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
+        if [ -n "$INSTANCE_IDS" ] && [ "$INSTANCE_IDS" != "None" ]; then
+          echo "Terminating old staging instances: $INSTANCE_IDS"
+          aws ec2 terminate-instances \
+            --region "$AWS_REGION" \
+            --instance-ids $INSTANCE_IDS
 
-      - name: Show staging public IP
-        run: terraform output staging_public_ip
+          echo "Waiting for instances to terminate..."
+          aws ec2 wait instance-terminated \
+            --region "$AWS_REGION" \
+            --instance-ids $INSTANCE_IDS
+        else
+          echo "No old staging instances found."
+        fi
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
 
-      - name: Show staging URL
-        run: terraform output staging_url
+    - name: Cleanup old staging key pairs
+      run: |
+        KEY_NAMES=$(aws ec2 describe-key-pairs \
+          --region "$AWS_REGION" \
+          --query 'KeyPairs[?starts_with(KeyName, `notes-app-key-`)].KeyName' \
+          --output text)
 
+        if [ -n "$KEY_NAMES" ] && [ "$KEY_NAMES" != "None" ]; then
+          for KEY in $KEY_NAMES; do
+            echo "Deleting key pair: $KEY"
+            aws ec2 delete-key-pair \
+              --region "$AWS_REGION" \
+              --key-name "$KEY"
+          done
+        else
+          echo "No old staging key pairs found."
+        fi
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
+
+    - name: Cleanup old staging security groups
+      run: |
+        SG_IDS=$(aws ec2 describe-security-groups \
+          --region "$AWS_REGION" \
+          --query 'SecurityGroups[?starts_with(GroupName, `notes-app-staging-sg-`)].GroupId' \
+          --output text)
+
+        if [ -n "$SG_IDS" ] && [ "$SG_IDS" != "None" ]; then
+          for SG in $SG_IDS; do
+            echo "Deleting security group: $SG"
+            aws ec2 delete-security-group \
+              --region "$AWS_REGION" \
+              --group-id "$SG" || echo "Could not delete $SG yet"
+          done
+        else
+          echo "No old staging security groups found."
+        fi
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
+
+    - name: Terraform Init
+      run: terraform init
+
+    - name: Terraform Apply
+      run: |
+        terraform apply -auto-approve \
+          -var="docker_image=${{ secrets.DOCKER_USERNAME }}/notes-app" \
+          -var="docker_tag=${{ env.APP_VERSION }}" \
+          -var="registry_user=${{ secrets.DOCKER_USERNAME }}" \
+          -var="registry_password=${{ secrets.DOCKER_PASSWORD }}"
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        AWS_DEFAULT_REGION: ${{ env.AWS_REGION }}
+
+    - name: Show staging public IP
+      run: terraform output staging_public_ip
+
+    - name: Show staging URL
+      run: terraform output staging_url
   ############################################
   # STAGE 6: PRODUCTION EKS INFRA
   ############################################

@@ -1,4 +1,4 @@
-terraform {
+tterraform {
   required_version = ">= 1.5.0"
 
   required_providers {
@@ -113,6 +113,8 @@ resource "aws_instance" "staging" {
               EOF
 
   tags = {
-    Name = local.instance_name
+    Name        = local.instance_name
+    Environment = "staging"
+    Project     = "notes-app"
   }
-}
+}erraform {
