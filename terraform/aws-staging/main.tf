@@ -1,4 +1,4 @@
-tterraform {
+terraform {
   required_version = ">= 1.5.0"
 
   required_providers {
@@ -117,4 +117,4 @@ resource "aws_instance" "staging" {
     Environment = "staging"
     Project     = "notes-app"
   }
-}erraform {
+}
