@@ -126,10 +126,3 @@ resource "kubernetes_service" "app" {
   }
 }
 
-output "namespace" {
-  value = var.namespace
-}
-
-output "service_name" {
-  value = kubernetes_service.app.metadata[0].name
-}
